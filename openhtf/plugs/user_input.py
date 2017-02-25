@@ -55,7 +55,11 @@ class PromptUnansweredError(Exception):
   """Raised when a prompt times out or otherwise comes back unanswered."""
 
 
-Prompt = collections.namedtuple('Prompt', 'id message text_input')
+class WrongPromptError(Exception):
+  """Raise when a response is made to an unknown prompt ID."""
+
+
+Prompt = collections.namedtuple('Prompt', 'id message text_input options')
 
 
 class ConsolePrompt(threading.Thread):
@@ -81,9 +85,12 @@ class ConsolePrompt(threading.Thread):
       if platform.system() == 'Windows':
         # Windows doesn't support file-like objects for select(), so fall back
         # to raw_input().
-        response = raw_input(self._message + '\n\r')
-        self._answered = True
-        self._callback(response)
+        accepted = False
+        while not (self._stopped or accepted):
+          response = raw_input(self._message + '\n\r')
+          accepted = self._callback(response)
+        if accepted:
+          self._answered = True
       else:
         # First, display the prompt to the console.
         print self._message
@@ -114,9 +121,15 @@ class ConsolePrompt(threading.Thread):
               line += new
               if '\n' in line:
                 response = line[:line.find('\n')]
-                self._answered = True
-                self._callback(response)
-              return
+                try:
+                  accepted = self._callback(response)
+                except WrongPromptError:
+                  return
+                if accepted:
+                  self._answered = True
+                  return
+                print '\nInvalid response.\n\n' + self._message
+                line = ''
     finally:
       self._stopped = True
 
@@ -136,20 +149,38 @@ class UserInput(plugs.FrontendAwareBasePlug):
     with self._cond:
       if self._prompt is None:
         return
-      return {'id': self._prompt.id.hex,
-              'message': self._prompt.message,
-              'text-input': self._prompt.text_input}
+      return {
+          'id': self._prompt.id.hex,
+          'message': self._prompt.message,
+          'text-input': self._prompt.text_input,
+          'options': self._prompt.options,
+      }
 
-  def _create_prompt(self, message, text_input):
+  def _create_prompt(self, message, text_input, options):
     """Sets the prompt."""
+    if options == []:
+      raise ValueError('Prompt options cannot be an empty list.')
+    if text_input and options:
+      raise ValueError('Cannot set options on a prompt with text_input=True.')
+
     prompt_id = uuid.uuid4()
     _LOG.debug('Displaying prompt (%s): "%s"%s', prompt_id, message,
                ', Expects text' if text_input else '')
 
     self._response = None
-    self._prompt = Prompt(id=prompt_id, message=message, text_input=text_input)
+    self._prompt = Prompt(prompt_id, message, text_input, options)
+
+    if options:
+      options_string = '\n'.join('%d: %s' % (i + 1, option)
+                                 for i, option in enumerate(options))
+      help_text = ('(Please respond with an integer from 1 to %d.)' %
+                   len(options))
+      console_message = '%s\n\n%s\n%s' % (options_string, message, help_text)
+    else:
+      console_message = message
+
     self._console_prompt = ConsolePrompt(
-        message, functools.partial(self.respond, prompt_id))
+        console_message, functools.partial(self.respond, prompt_id))
 
     self._console_prompt.start()
     self.notify_update()
@@ -161,30 +192,40 @@ class UserInput(plugs.FrontendAwareBasePlug):
     self._console_prompt = None
     self.notify_update()
 
-  def prompt(self, message, text_input=False, timeout_s=None):
+  def prompt(self, message, text_input=False, options=None, timeout_s=None):
     """Prompt and wait for a user response to the given message.
+
+    Three prompt types are supported:
+      - No input (text_input=False, options=None)
+      - Text input (text_input=True, options=None)
+      - Option selection (text_input=False, options=list)
 
     Args:
       message: The message to display to the user.
       text_input: True iff the user needs to provide a string back.
+      options: A list of strings for the user to select from, or None. Should
+          not be set when text_input is True. List cannot be empty.
       timeout_s: Seconds to wait before raising a PromptUnansweredError.
 
     Returns:
-      The response from the user, or the empty string if text_input was False.
+      Depending on the prompt type:
+        - No input: the empty string
+        - Text input: the user's response
+        - Option selection: integer index of one of the options
 
     Raises:
       MultiplePromptsError: There was already an existing prompt.
       PromptUnansweredError: Timed out waiting for the user to respond.
     """
-    self.start_prompt(message, text_input)
+    self.start_prompt(message, text_input, options)
     return self.wait_for_prompt(timeout_s)
 
-  def start_prompt(self, message, text_input=False):
+  def start_prompt(self, message, text_input=False, options=None):
     """Creates a prompt without blocking on the user's response."""
     with self._cond:
       if self._prompt:
         raise MultiplePromptsError
-      self._create_prompt(message, text_input)
+      self._create_prompt(message, text_input, options)
 
   def wait_for_prompt(self, timeout_s=None):
     """Waits for and returns the user's response to the last prompt."""
@@ -201,23 +242,38 @@ class UserInput(plugs.FrontendAwareBasePlug):
   def respond(self, prompt_id, response):
     """Respond to the prompt that has the given ID.
 
-    If there is no active prompt or the prompt id being responded to doesn't
-    match the active prompt, do nothing.
-
     Args:
-      prompt_id: Either a UUID instance, or a string representing a UUID.
+      prompt_id: A UUID instance or a string representing a UUID.
       response: A string response to the given prompt.
 
     Returns:
-      True if the prompt was used, otherwise False.
+      True if the response was used, otherwise False.
+
+    Raises:
+      WrongPromptError: There is no active prompt or the prompt ID being
+          responded to doesn't match the active prompt.
     """
     if type(prompt_id) == str:
       prompt_id = uuid.UUID(prompt_id)
+
     _LOG.debug('Responding to prompt (%s): "%s"', prompt_id.hex, response)
+
     with self._cond:
-      if not (self._prompt and self._prompt.id == prompt_id):
-        return False
-      self._response = response
+      if not self._prompt or self._prompt.id != prompt_id:
+        raise WrongPromptError
+
+      # If the prompt has options, validate the response.
+      if self._prompt.options:
+        try:
+          index = int(response) - 1
+          if index < 0 or index >= len(self._prompt.options):
+            return False
+          self._response = index
+        except ValueError:
+          return False
+      else:
+        self._response = response
+
       self._remove_prompt()
       self._cond.notifyAll()
     return True
