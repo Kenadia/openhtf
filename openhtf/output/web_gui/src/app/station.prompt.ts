@@ -42,7 +42,7 @@ export class Prompt {
   /**
    * Send the response to the given prompt through the StationService.
    */
-  sendResponse(input: HTMLInputElement, id: string) {
+  sendResponse(input: HTMLInputElement|HTMLSelectElement, id: string) {
     let ip = this.routeParams.get('host');
     let port = this.routeParams.get('port');
     let response = input ? input.value : '';
