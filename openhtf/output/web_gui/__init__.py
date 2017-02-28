@@ -397,12 +397,18 @@ class TestHandler(tornado.web.RequestHandler):
   def initialize(self, station_store):
     self.station_store = station_store
 
+  def set_default_headers(self):
+    # TODO(kschiller): Only do this in development mode.
+    self.set_header('Access-Control-Allow-Origin', '*')
+
   def get(self, host, port, test_uid, request_type):
     assert request_type in self.ENDPOINTS
 
     try:
-      test = self.station_store[Hostport(host, port)][test_uid]
-    except KeyError:
+      hostport = Hostport(host, int(port))
+      test = self.station_store[hostport][test_uid]
+    except (KeyError, TypeError, ValueError):
+      print 'Could not find %s in %s' % (hostport, self.station_store.stations.keys())
       self.write_error(404);
       return
 
