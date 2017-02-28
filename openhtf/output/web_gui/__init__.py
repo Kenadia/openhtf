@@ -64,9 +64,8 @@ from openhtf import plugs
 from openhtf.core import station_api
 from openhtf.util import classproperty
 from openhtf.util import conf
-from openhtf.util import logs
 from openhtf.util import threads
-from openhtf.util.data import convert_to_base_types
+from openhtf.util import data
 
 
 _LOG = logging.getLogger(__name__)
@@ -198,6 +197,7 @@ class StationStore(threading.Thread):
       test_uid: uid of the test that received the update, unique per station.
       state: The full test state post-update.
   """
+
   def __init__(self, discovery_interval_s, disable_discovery=False,
                on_discovery_callback=None, on_update_callback=None):
     super(StationStore, self).__init__()
@@ -351,7 +351,7 @@ class StationPubSub(PubSub):
     """Construct a message for publishing."""
     return json.dumps({
         'test_uid': test_uid,
-        'state': convert_to_base_types(remote_state)
+        'state': data.convert_to_base_types(remote_state)
     })
 
   @classmethod
@@ -384,13 +384,43 @@ class StationPubSub(PubSub):
     self.subscriber_to_hostport_map.pop(self)
 
 
+class TestHandler(tornado.web.RequestHandler):
+  """Provides information about tests.
+
+  StationPubSub provides test state information, which changes frequently. This
+  handler provides other test information.
+  """
+  PHASES_ENDPOINT = 'phases'
+  HISTORY_ENDPOINT = 'history'
+  ENDPOINTS = (PHASES_ENDPOINT, HISTORY_ENDPOINT)
+
+  def initialize(self, station_store):
+    self.station_store = station_store
+
+  def get(self, host, port, test_uid, request_type):
+    assert request_type in self.ENDPOINTS
+
+    try:
+      test = self.station_store[Hostport(host, port)][test_uid]
+    except KeyError:
+      self.write_error(404);
+      return
+
+    if request_type == self.PHASES_ENDPOINT:
+      return data.convert_to_base_types(test.phase_descriptors)
+    else:
+      return data.convert_to_base_types(test.history)
+
+
 class WebGuiServer(tornado.web.Application):
   """Serves the OpenHTF web frontend."""
 
   class MainHandler(tornado.web.RequestHandler):
     """Main handler for OpenHTF frontend app.
 
-    Serves the index page; the main entry point for the client app."""
+    Serves the index page; the main entry point for the client app.
+    """
+
     def initialize(self, port):  # pylint: disable=arguments-differ
       self.port = port
 
@@ -412,6 +442,8 @@ class WebGuiServer(tornado.web.Application):
         (r'/', self.MainHandler, {'port': http_port}),
         (r'/station/(?:\d{1,3}\.){3}\d{1,3}/(?:\d{1,5})/?',
          self.MainHandler, {'port': http_port}),
+        (r'/test/([\d\.]+)/(\d+)/(.*)/(phases|history)', TestHandler,
+         {'station_store': self.store}),
         (r'/(.*\..*)', tornado.web.StaticFileHandler, {'path': frontend_path}),
     ] + dash_router.urls + station_router.urls
     super(WebGuiServer, self).__init__(
