@@ -87,7 +87,7 @@ from openhtf.util import xmlrpcutil
 
 # Fix for xmlrpclib to use <i8> for longs instead of <int>, because our
 # timestamps are in millis, which are too big for 4-byte ints.
-xmlrpclib.Marshaller.dispatch[long] = (
+xmlrpclib.Marshaller.dispatch[long] = xmlrpclib.Marshaller.dispatch[int] = (
     lambda _, v, w: w('<value><i8>%d</i8></value>' % v))
 
 _LOG = logging.getLogger(__name__)

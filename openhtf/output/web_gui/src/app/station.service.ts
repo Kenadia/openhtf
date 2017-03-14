@@ -16,7 +16,7 @@
 declare var jsonpatch; // Global provided by the fast-json-patch package.
 
 import {Injectable} from 'angular2/core';
-import {Headers, Http, RequestOptions} from 'angular2/http';
+import {Headers, Http, RequestOptions, Response} from 'angular2/http';
 import {Observable} from 'rxjs/Observable';
 import 'rxjs/add/observable/throw';
 import 'rxjs/add/operator/catch';
@@ -36,8 +36,8 @@ export class StationService extends SubscriptionService {
   private reachable: boolean;
   private stationInfo: any;
   private testUIDs: string[];
-  private tests: any;
-  private pausedTests: any[];
+  private tests: {[test_uid: string]: any};
+  private testPhases: {[test_uid: string]: any[]};
 
   /**
    * Create a StationService.
@@ -53,7 +53,7 @@ export class StationService extends SubscriptionService {
     };
     this.testUIDs = [];
     this.tests = {};
-    this.pausedTests = [];
+    this.testPhases = {};
   }
 
   /**
@@ -74,20 +74,20 @@ export class StationService extends SubscriptionService {
    *                instance.
    */
   updateTest(test_uid: string, state: any) {
-    if (this.tests[test_uid] == undefined) {
+    if (!(test_uid in this.tests)) {
       this.tests[test_uid] = state;
       this.testUIDs.push(test_uid);
-    } else if (this.pausedTests.indexOf(test_uid) == -1) {
+      this.requestPhases(this.stationInfo.host, this.stationInfo.port, test_uid)
+          .subscribe((response: Response) => {
+              this.testPhases[test_uid] = response.json().data;
+           });
+    } else {
       let diff = jsonpatch.compare(this.tests[test_uid], state);
       jsonpatch.apply(this.tests[test_uid], diff);
       if (state && state.status == 'COMPLETED') {
         // Test has finished!
         // TODO(jethier): Refresh the history object.
-        this.pausedTests.push(test_uid);
         console.debug('Test completed.');
-        setTimeout(() => {
-          this.pausedTests.splice(this.pausedTests.indexOf(test_uid), 1);
-        }, 15000);
       }
     }
   }
@@ -142,7 +142,7 @@ export class StationService extends SubscriptionService {
    * The returned object maps string unique id's for each test on the station
    * to objects representing the serialized OpenHTF RemoteState instances.
    */
-  getTests(): any[] {
+  getTests() {
     return this.tests;
   }
 
@@ -151,8 +151,15 @@ export class StationService extends SubscriptionService {
    *
    * The UIDs are listed in the order that they were first seen.
    */
-  getTestUIDs(): any[] {
+  getTestUIDs() {
     return this.testUIDs;
+  }
+
+  /**
+   * Return a reference to the object containing test descriptor phase info.
+   */
+  getTestPhases() {
+    return this.testPhases;
   }
 
   /**
@@ -164,9 +171,23 @@ export class StationService extends SubscriptionService {
   }
 
   /**
-   * Send a response to the given station for the given prompt ID.
+   * Request the test descriptor's phases (i.e. all the phases).
+   *
+   * Returns an observable.
    */
-  respondToPrompt(ip: string, port: string, test_uid: number, id: string, response: string) {
+  requestPhases(ip: string, port: string, test_uid: string) {
+    let headers = new Headers({ 'Content-Type': 'application/json' });
+    let options = new RequestOptions({ headers: headers });
+    let url = `/test/${ ip }/${ port }/${ test_uid }/phases`;
+    return this.http.get(url).catch(this.handleError);
+  }
+
+  /**
+   * Send a response to the given station for the given prompt ID.
+   *
+   * Returns an observable.
+   */
+  respondToPrompt(ip: string, port: string, test_uid: string, id: string, response: string) {
     let headers = new Headers({ 'Content-Type': 'application/json' });
     let options = new RequestOptions({ headers: headers });
     let plug_url = `/plugs/${ ip }/${ port }/${ test_uid }/openhtf.plugs.user_input.UserInput`;
@@ -174,8 +195,6 @@ export class StationService extends SubscriptionService {
       method: 'respond',
       args: [id, response],
     });
-    this.http.post(plug_url, payload, options)
-        .catch(this.handleError)
-        .subscribe();
+    return this.http.post(plug_url, payload, options).catch(this.handleError);
   }
 }

@@ -30,7 +30,7 @@ import 'file?name=/templates/station.prompt.html!./station.prompt.html';
 })
 export class Prompt {
   @Input() prompt: any;
-  @Input() test_uid: number;
+  @Input() test_uid: string;
 
   /**
    * Create a Station view component.
@@ -46,7 +46,8 @@ export class Prompt {
     let ip = this.routeParams.get('host');
     let port = this.routeParams.get('port');
     let response = input ? input.value : '';
-    this.stationService.respondToPrompt(ip, port, this.test_uid, id, response);
+    this.stationService.respondToPrompt(ip, port, this.test_uid, id, response)
+        .subscribe();
     if (input) {
       input.value = null;
     }

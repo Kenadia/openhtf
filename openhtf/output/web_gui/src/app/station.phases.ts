@@ -96,8 +96,9 @@ export class MeasToHtml implements PipeTransform {
           StatusToColor,]
 })
 export class PhaseListing implements OnInit {
-  @Input() state;
-  @Input() currentMillis;
+  @Input() state: any;
+  @Input() currentMillis: number;
+  @Input() descriptorPhases: any[];
 
   /**
    * Set up the view component.
@@ -105,5 +106,9 @@ export class PhaseListing implements OnInit {
   public ngOnInit(): any {
     // Enable materialize-css js support for collapsibles.
     $('.collapsible').collapsible({});
+  }
+
+  public getPendingPhases() {
+    return this.descriptorPhases;
   }
 }

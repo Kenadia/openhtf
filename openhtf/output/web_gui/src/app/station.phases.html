@@ -4,7 +4,7 @@
 </div>
 <div>
 <!-- It might have been cleaner to have a "phase" component to build these
-     lists from, but not possible with the current architecture; 
+     lists from, but not possible with the current architecture;
      materialize-css's collapsible popout lists don't allow for extra nesting
      layers between its own layers. Thus Angular2's component wrapping layer
      would break the popout list. -->
@@ -93,11 +93,11 @@
     </div>
   </li>
   <!-- Pending phases from their list. -->
-  <li *ngFor="let phase of state.test_record.pending_phases">
+  <li *ngFor="let phase of getPendingPhases()">
       <div class="collapsible-header {{'PENDING' | statusToColor}} waves-effect waves-light">
       <div class="phase-header-text">
         <div class="name">
-          {{phase[0]}}
+          {{phase.name}}
         </div>
         <div class="cycle-time">
         </div>
@@ -107,7 +107,7 @@
       </div>
     </div>
     <div class="collapsible-body {{'PENDING' | statusToDark}}">
-      <p *ngIf="phase.docstring" class="docstring">{{phase[1]}}</p>
+      <p *ngIf="phase.doc" class="docstring">{{phase.doc}}</p>
     </div>
   </li>
 </ul>

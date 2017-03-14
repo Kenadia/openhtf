@@ -22,6 +22,7 @@
                   [test_uid]="testUID">
           </prompt>
           <phase-listing id="phases" [state]="tests[testUID]"
+                                     [descriptorPhases]="getDescriptorPhases(testUID)"
                                      [currentMillis]="currentMillis">
           </phase-listing>
           <logs id="logs" [log_records]="tests[testUID].test_record?.log_records">

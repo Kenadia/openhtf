@@ -387,8 +387,8 @@ class StationPubSub(PubSub):
 class TestHandler(tornado.web.RequestHandler):
   """Provides information about tests.
 
-  StationPubSub provides test state information, which changes frequently. This
-  handler provides other test information.
+  StationPubSub provides test state information, which changes frequently.
+  This handler provides other test information.
   """
   PHASES_ENDPOINT = 'phases'
   HISTORY_ENDPOINT = 'history'
@@ -405,17 +405,24 @@ class TestHandler(tornado.web.RequestHandler):
     assert request_type in self.ENDPOINTS
 
     try:
-      hostport = Hostport(host, int(port))
-      test = self.station_store[hostport][test_uid]
-    except (KeyError, TypeError, ValueError):
-      print 'Could not find %s in %s' % (hostport, self.station_store.stations.keys())
-      self.write_error(404);
+      station = self.station_store[Hostport(host, int(port))]
+    except (KeyError, ValueError):
+      self.write('Unknown host and port %s:%s' % (host, port))
+      self.set_status(404)
       return
 
+    try:
+      test = station.tests[test_uid]
+    except KeyError:
+      self.write('Unknown test ID %s' % test_uid)
+      self.set_status(404)
+      return
+
+    # Ensure we send a dictionary because lists are not allowed.
     if request_type == self.PHASES_ENDPOINT:
-      return data.convert_to_base_types(test.phase_descriptors)
+      self.write({'data': data.convert_to_base_types(test.phase_descriptors)})
     else:
-      return data.convert_to_base_types(test.history)
+      self.write({'data': data.convert_to_base_types(test.history)})
 
 
 class WebGuiServer(tornado.web.Application):
@@ -448,7 +455,7 @@ class WebGuiServer(tornado.web.Application):
         (r'/', self.MainHandler, {'port': http_port}),
         (r'/station/(?:\d{1,3}\.){3}\d{1,3}/(?:\d{1,5})/?',
          self.MainHandler, {'port': http_port}),
-        (r'/test/([\d\.]+)/(\d+)/(.*)/(phases|history)', TestHandler,
+        (r'/test/([\d\.]+)/(\d+)/(.*)/(phases|history)/?', TestHandler,
          {'station_store': self.store}),
         (r'/(.*\..*)', tornado.web.StaticFileHandler, {'path': frontend_path}),
     ] + dash_router.urls + station_router.urls
