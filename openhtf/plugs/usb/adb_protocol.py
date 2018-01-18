@@ -79,7 +79,6 @@ Example usage of a connection and stream:
 import collections
 import itertools
 import logging
-import queue
 import threading
 
 from enum import Enum
@@ -90,6 +89,10 @@ from openhtf.util import argv
 from openhtf.util import exceptions
 from openhtf.util import timeouts
 
+if sys.version_info[0] < 3:
+  import Queue as queue
+else:
+  import queue
 
 ADB_MESSAGE_LOG = False
 
