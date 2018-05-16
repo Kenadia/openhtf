@@ -97,7 +97,8 @@ def banner_print(msg, color='', width=60, file=sys.stdout, logger=_LOG):
     ======================== Foo Bar Baz =======================
 
   """
-  logger.debug(ANSI_ESC_RE.sub('', msg))
+  if logger:
+    logger.debug(ANSI_ESC_RE.sub('', msg))
   if CLI_QUIET:
     return
   lpad = int(math.ceil((width - _printed_len(msg) - 2) / 2.0)) * '='
@@ -149,12 +150,14 @@ def cli_print(msg, color='', end=None, file=sys.stdout, logger=_LOG):
         for use with CLI output file objects like sys.stdout.
     logger: Logger to which to send analogous output for each message.
   """
+  if logger:
+    logger.debug('-> {}'.format(msg))
+  if CLI_QUIET:
+    return
   if end is None:
     end = _linesep_for_file(file)
-  if not CLI_QUIET:
-    file.write('{color}{msg}{reset}{end}'.format(
-        color=color, msg=msg, reset=colorama.Style.RESET_ALL, end=end))
-  logger.debug('-> {}'.format(msg))
+  file.write('{color}{msg}{reset}{end}'.format(
+      color=color, msg=msg, reset=colorama.Style.RESET_ALL, end=end))
 
 
 def error_print(msg, color=colorama.Fore.RED, file=sys.stderr):
@@ -178,6 +181,7 @@ def error_print(msg, color=colorama.Fore.RED, file=sys.stderr):
 
 class ActionResult(object):
   """Used with an action_result_context to signal the result of an action."""
+
   def __init__(self):
     self.success = None
 
@@ -255,33 +259,35 @@ def action_result_context(action_text,
     Doing an action that will raise...                  [ FAIL ]
     ...
   """
-  logger.debug('Action - %s', action_text)
+  if logger:
+    logger.debug('Action - %s', action_text)
   if not CLI_QUIET:
     file.write(''.join((action_text, '\r')))
     file.flush()
-  spacing = (width - status_width - _printed_len(action_text)) * ' '
+    spacing = (width - status_width - _printed_len(action_text)) * ' '
+
   result = ActionResult()
   try:
     yield result
   except Exception as err:
+    if logger:
+      logger.debug('Result - %s [ %s ]', action_text, fail_text)
     if not CLI_QUIET:
       file.write(''.join((action_text, spacing)))
       bracket_print(fail_text, width=status_width, color=colorama.Fore.RED,
                     file=file)
-    logger.debug('Result - %s [ %s ]', action_text, fail_text)
     if not isinstance(err, ActionFailedError):
       raise
     return
+
+  result_text = succeed_text if result.success else unknown_text
+  result_color = colorama.Fore.GREEN if result.success else colorama.Fore.YELLOW
+  if logger:
+    logger.debug('Result - %s [ %s ]', action_text, result_text)
   if not CLI_QUIET:
     file.write(''.join((action_text, spacing)))
-  if result.success:
-    bracket_print(succeed_text, width=status_width, color=colorama.Fore.GREEN,
+    bracket_print(result_text, width=status_width, color=result_color,
                   file=file)
-    logger.debug('Result - %s [ %s ]', action_text, succeed_text)
-  elif result.success is None:
-    bracket_print(unknown_text, width=status_width, color=colorama.Fore.YELLOW,
-                  file=file)
-    logger.debug('Result - %s [ %s ]', action_text, unknown_text)
 
 
 # If invoked as a runnable module, this module will invoke its action result
