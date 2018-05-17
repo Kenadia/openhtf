@@ -24,13 +24,13 @@ import tornado.web
 
 import openhtf
 from openhtf.output.callbacks import mfg_inspector
-from openhtf.output.web_gui_server import pub_sub
-from openhtf.output.web_gui_server import web_gui_server
+from openhtf.output.servers import multicast
+from openhtf.output.servers import pub_sub
+from openhtf.output.servers import web_gui_server
 from openhtf.util import conf
 from openhtf.util import data
 from openhtf.util import functions
 from openhtf.util import logs
-from openhtf.util import multicast
 from openhtf.util import timeouts
 
 STATION_SERVER_TYPE = 'station'
