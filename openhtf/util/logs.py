@@ -155,9 +155,6 @@ class MacAddressLogFilter(logging.Filter):
             self.MAC_REPLACEMENT, record.getMessage())
     return True
 
-# We use one shared instance of this, it has no internal state.
-MAC_FILTER = MacAddressLogFilter()
-
 
 class TestUidFilter(logging.Filter):
   """Only allow logs to pass whose logger source matches the given uid."""
@@ -193,7 +190,6 @@ class RecordHandler(logging.Handler):
     self.test_uid = test_uid
     self._test_record = test_record
     self._notify_update = notify_update
-    self.addFilter(MAC_FILTER)
     self.addFilter(TestUidFilter(test_uid))
 
   def handle(self, record):
@@ -253,9 +249,36 @@ class CliFormatter(logging.Formatter):
                                                   msg=record.message)
 
 
+class CustomLogger(logging.Logger):
+  """Applies a logger's filters to all of its handlers."""
+  WHITELISTED_LOGGERS = ['openhtf']
+
+  def addFilter(self, log_filter):
+    if self.name in self.WHITELISTED_LOGGERS:
+      for handler in self.handlers:
+        if log_filter not in handler.filters:
+          handler.addFilter(log_filter)
+    super(CustomLogger, self).addFilter(log_filter)
+
+  def addHandler(self, handler):
+    if self.name in self.WHITELISTED_LOGGERS:
+      for log_filter in self.filters:
+        if log_filter not in handler.filters:
+          handler.addFilter(log_filter)
+    super(CustomLogger, self).addHandler(handler)
+
+
+def add_filter(filter):
+  """Add a filter to apply to all logs in the `openhtf` logging tree."""
+  configure_cli_logging()
+  logging.getLogger(LOGGER_PREFIX).addFilter(MacAddressLogFilter())
+
+
 @functions.call_once
 def configure_cli_logging():
   """Configure OpenHTF to log to the CLI based on verbosity arg."""
+  logging.Logger.manager.setLoggerClass(CustomLogger)
+
   if CLI_LOGGING_VERBOSITY == 0:
     return # The default behavior is not to log anything to the CLI.
   logging_level = None
@@ -269,7 +292,6 @@ def configure_cli_logging():
   cli_handler = KillableThreadSafeStreamHandler(stream=sys.stdout)
   cli_handler.setFormatter(CliFormatter())
   cli_handler.setLevel(logging_level)
-  cli_handler.addFilter(MAC_FILTER)
   # Make sure we also suppress CLI logging (in addition to anything that would
   # have been printed through the printing helper functions) if the user has set
   # the --quiet flag in the console_output module.

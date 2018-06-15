@@ -27,10 +27,13 @@ TODO(someone): Write an output example.
 For more information on output, see the output.py example.
 """
 
+import logging
+
 # Import openhtf with an abbreviated name, as we'll be using a bunch of stuff
 # from it throughout our test scripts. See __all__ at the top of
 # openhtf/__init__.py for details on what's in top-of-module namespace.
 import openhtf as htf
+from openhtf.util import logs
 
 # Import this output mechanism as it's the specific one we want to use.
 from openhtf.output.callbacks import json_factory
@@ -57,6 +60,7 @@ def hello_world(test):
   # is the recommended way to do any logging within test phases (this is also
   # how to get logs to show up in the frontend).
   test.logger.info('Hello World!')
+  test.logger.info('FF:FF:FF:FF:FF:FF')
 
   # As described above, this is how measurements are set.  The value that has
   # been set can also be accessed, but should only be set once (this will be
@@ -69,6 +73,8 @@ if __name__ == '__main__':
   # Multiple phases would be passed as additional args, and additional
   # keyword arguments may be passed as well.  See other examples for more
   # complex uses.
+  logs.ARG_PARSER.parse_args()
+  logs.add_filter(logs.MacAddressLogFilter())
   test = htf.Test(hello_world)
 
   # In order to view the result of the test, we have to output it somewhere,
